@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Annual Planner – HERO</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI', 'Yu Gothic', Verdana, sans-serif;
+      background: #f0faf8;
+      color: #111;
+      height: 100vh;
+      overflow: hidden;
+    }
+    svg text {
+      font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI', Verdana, sans-serif;
+    }
+    input, select, button { font-family: inherit; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f0faf8; }
+    ::-webkit-scrollbar-thumb { background: #0B8B7F; border-radius: 3px; }
+    .no-select { user-select: none; -webkit-user-select: none; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ─── Supabase ─────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://jscxvrvhcapjkvqpqrol.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_ZVEX3CCrMEISaENED5nNhA_iaKScA33';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── Design tokens (HERO brand) ───────────────────────────────────────────
+const D = {
+  main:   '#0B8B7F',
+  accent: '#0DE7A5',
+  base:   '#cdfbe4',
+  bg:     '#f0faf8',
+  text:   '#111111',
+  sub1:   '#22638e',
+  sub2:   '#31C8CB',
+  sub3:   '#3E1485',
+  sub4:   '#737373',
+  sub5:   '#327054',
+  light:  '#D5D5D5',
+};
+
+// ─── Groups ───────────────────────────────────────────────────────────────
+const GROUPS = [
+  { id:'overall',         label:'全体',            lines:['全体'],                color:D.main, minLanes:1, labelSize:22 },
+  { id:'fund_raise',      label:'ファンドレイズ',   lines:['ファンド','レイズ'],    color:D.sub1, minLanes:2, labelSize:18 },
+  { id:'fund_existing',   label:'既存投資先',       lines:['既存','投資先'],        color:D.sub1, minLanes:2, labelSize:18 },
+  { id:'fund_new',        label:'新規投資先',       lines:['新規','投資先'],        color:D.sub1, minLanes:2, labelSize:18 },
+  { id:'zero_institute',  label:'ZERO INSTITUTE',  lines:['ZERO','INSTITUTE'],   color:D.sub2, minLanes:3, labelSize:18 },
+  { id:'consulting',      label:'コンサルティング', lines:['コンサル','ティング'],  color:D.sub2, minLanes:2, labelSize:18 },
+  { id:'zero_foundation', label:'ZERO Foundation', lines:['ZERO','Foundation'],  color:D.sub3, minLanes:3, labelSize:18 },
+  { id:'host_event',      label:'ホストイベント',   lines:['ホスト','イベント'],    color:D.sub5, minLanes:2, labelSize:16 },
+  { id:'external',        label:'外部イベント',     lines:['外部','イベント'],      color:D.sub5, minLanes:1, labelSize:16 },
+  { id:'other',           label:'その他',           lines:['その他'],              color:D.sub4, minLanes:1, labelSize:22 },
+];
+
+// ─── Layout ───────────────────────────────────────────────────────────────
+const LBL_W     = 120;
+const BASE_ROW_H     = 44;
+const BASE_LANE_G    = 6;
+const HDR_H     = 46;
+const BASE_GRP_PAD   = 10;
+const GRP_DIV   = 2;
+const LONG_PRESS_MS = 320;
+const DRAG_THRESH = 8;
+
+// ─── Date helpers ─────────────────────────────────────────────────────────
+const MONTH_LABELS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+function toYMD(d) {
+  if (d instanceof Date) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+  return d;
+}
+function parseDate(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+function diffDays(a, b) { return Math.round((parseDate(b) - parseDate(a)) / 86400000); }
+function addDays(s, n) { const d = parseDate(s); d.setDate(d.getDate()+n); return toYMD(d); }
+function formatMonthDay(s) {
+  if (!s) return '';
+  const d = parseDate(s);
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+function getFiscalYear(d = new Date()) { return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; }
+function yearStart(y) { return `${y}-04-01`; }
+function yearEnd(y)   { return `${y+1}-03-31`; }
+function outcomeStart(y) { return `${y+1}-04-01`; }
+function outcomeEnd(y) { return `${y+1}-05-01`; }
+function totalTimelineDays(y) { return diffDays(yearStart(y), outcomeEnd(y)); }
+function getResponsiveLayout(containerH = 900) {
+  const scale = Math.min(1.08, Math.max(0.76, containerH / 900));
+  return {
+    ROW_H: Math.round(BASE_ROW_H * scale),
+    LANE_G: Math.max(4, Math.round(BASE_LANE_G * scale)),
+    GRP_PAD: Math.max(8, Math.round(BASE_GRP_PAD * scale)),
+  };
+}
+function computeFitLayout(containerH, yearEvents) {
+  // 1st pass: compute natural height at scale=1
+  const baseLayout = { ROW_H: BASE_ROW_H, LANE_G: BASE_LANE_G, GRP_PAD: BASE_GRP_PAD };
+  const baseSections = computeGroupSections(yearEvents, baseLayout);
+  const last = baseSections[baseSections.length - 1];
+  const naturalH = last ? last.y + last.height + 16 : 400;
+  // 2nd pass: scale to fit containerH (max 1.0 — don't upscale; min 0.35)
+  const scale = Math.min(1.0, Math.max(0.35, containerH / naturalH));
+  return {
+    ROW_H: Math.round(BASE_ROW_H * scale),
+    LANE_G: Math.max(3, Math.round(BASE_LANE_G * scale)),
+    GRP_PAD: Math.max(4, Math.round(BASE_GRP_PAD * scale)),
+  };
+}
+function splitEventLines(title, assignee) {
+  const titleLines = String(title || '').split('\n').map(s => s.trim()).filter(Boolean);
+  return assignee ? [...titleLines, assignee] : titleLines;
+}
+function estimateEventHeight(ev, layout = getResponsiveLayout()) {
+  const { ROW_H } = layout;
+  const lines = splitEventLines(ev.title, ev.assignee);
+  if (ev.type === 'flow') return Math.max(ROW_H, 20 + lines.length * 18);
+  if (ev.type === 'milestone') return Math.max(ROW_H, 18 + lines.length * 18);
+  if (ev.type === 'outcome') return Math.max(46, 16 + lines.length * 16);
+  return ROW_H;
+}
+function hasLaneIndex(ev) {
+  return Number.isInteger(ev?.lane_index) && ev.lane_index >= 0;
+}
+function normalizeGroupName(groupName) {
+  if (groupName === 'fund') return 'fund_raise';
+  return groupName || 'overall';
+}
+
+function getMonthSegments(year) {
+  const segments = [];
+  const fiscalMonths = [
+    { yearOffset: 0, month: 4 },
+    { yearOffset: 0, month: 5 },
+    { yearOffset: 0, month: 6 },
+    { yearOffset: 0, month: 7 },
+    { yearOffset: 0, month: 8 },
+    { yearOffset: 0, month: 9 },
+    { yearOffset: 0, month: 10 },
+    { yearOffset: 0, month: 11 },
+    { yearOffset: 0, month: 12 },
+    { yearOffset: 1, month: 1 },
+    { yearOffset: 1, month: 2 },
+    { yearOffset: 1, month: 3 },
+  ];
+  for (let i = 0; i < fiscalMonths.length; i++) {
+    const current = fiscalMonths[i];
+    const next = i === fiscalMonths.length - 1
+      ? { yearOffset: 1, month: 4 }
+      : fiscalMonths[i + 1];
+    const start = `${year + current.yearOffset}-${String(current.month).padStart(2,'0')}-01`;
+    const end = `${year + next.yearOffset}-${String(next.month).padStart(2,'0')}-01`;
+    segments.push({ label: `${current.month}月`, start, end, days: diffDays(start, end) });
+  }
+  const outStart = outcomeStart(year);
+  const outEnd = outcomeEnd(year);
+  segments.push({ label: 'Goal', start: outStart, end: outEnd, days: diffDays(outStart, outEnd), isOutcome: true });
+  return segments;
+}
+
+// ─── Lane assignment ──────────────────────────────────────────────────────
+function assignLanes(events) {
+  const sorted = [...events].sort((a,b) => a.start_date.localeCompare(b.start_date));
+  const laneEnd = [];
+  return sorted.map(ev => {
+    const s = ev.start_date;
+    const e = ev.end_date || ev.start_date;
+    let lane;
+    if (hasLaneIndex(ev)) {
+      lane = ev.lane_index;
+      laneEnd[lane] = laneEnd[lane] && laneEnd[lane] > e ? laneEnd[lane] : e;
+    } else {
+      lane = laneEnd.findIndex(le => le < s);
+      if (lane === -1) lane = laneEnd.length;
+      laneEnd[lane] = e;
+    }
+    return { ...ev, lane };
+  });
+}
+
+function computeGroupSections(yearEvents, layout) {
+  const { ROW_H, LANE_G, GRP_PAD } = layout;
+  let y = HDR_H;
+  return GROUPS.map(g => {
+    const gevs  = yearEvents.filter(ev => normalizeGroupName(ev.group_name) === g.id);
+    const scheduleEvents = gevs.filter(ev => ev.type !== 'outcome');
+    const outcomes = gevs.filter(ev => ev.type === 'outcome');
+    const laned = assignLanes(scheduleEvents);
+    const numLanes = Math.max(g.minLanes || 1, laned.length > 0 ? Math.max(...laned.map(e => e.lane))+1 : 0);
+    const laneHeights = Array.from({ length: numLanes }, (_, lane) => {
+      const laneEvents = laned.filter(ev => ev.lane === lane);
+      return Math.max(ROW_H, ...laneEvents.map(ev => estimateEventHeight(ev, layout)));
+    });
+    const outcomeHeight = outcomes.length
+      ? outcomes.reduce((sum, ev) => sum + estimateEventHeight(ev, layout) + 8, 8)
+      : 58;
+    const scheduleHeight = GRP_PAD + laneHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, numLanes - 1) * LANE_G + GRP_PAD;
+    const height = Math.max(scheduleHeight, outcomeHeight);
+    const section = { ...g, y, height, laned, outcomes, numLanes, laneHeights };
+    y += height + GRP_DIV;
+    return section;
+  });
+}
+
+function genId() { return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+function toDbEvent(ev) {
+  return {
+    id: ev.id,
+    type: ev.type,
+    title: ev.title,
+    start_date: ev.start_date,
+    end_date: ev.end_date || null,
+    group_name: normalizeGroupName(ev.group_name),
+    assignee: ev.assignee || null,
+    lane_index: hasLaneIndex(ev) ? ev.lane_index : null,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Root  ─  認証ゲート
+// ─────────────────────────────────────────────────────────────────────────────
+function Root() {
+  const [session, setSession] = useState(undefined); // undefined = loading
+
+  useEffect(() => {
+    // 初回セッション確認
+    sb.auth.getSession().then(({ data: { session } }) => setSession(session));
+    // セッション変化を購読
+    const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (session === undefined) {
+    // ロード中スプラッシュ
+    return (
+      <div style={{ height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:D.bg }}>
+        <div style={{ color:D.main, fontSize:14, fontWeight:600 }}>読み込み中…</div>
+      </div>
+    );
+  }
+  if (!session) return <LoginScreen />;
+  return <App user={session.user} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LoginScreen
+// ─────────────────────────────────────────────────────────────────────────────
+function LoginScreen() {
+  const [loading, setLoading] = useState(false);
+
+  async function signInWithGoogle() {
+    setLoading(true);
+    await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.href },
+    });
+  }
+
+  return (
+    <div style={{ height:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:D.bg, gap:0 }}>
+      {/* Card */}
+      <div style={{ background:'white', borderRadius:20, padding:'48px 48px 40px', width:360, boxShadow:'0 8px 40px rgba(11,139,127,0.13)', display:'flex', flexDirection:'column', alignItems:'center', gap:24 }}>
+        {/* Logo */}
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+          <div style={{ background:D.main, borderRadius:12, width:56, height:56, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ color:D.accent, fontWeight:900, fontSize:18, letterSpacing:2 }}>HERO</span>
+          </div>
+          <div style={{ fontWeight:800, fontSize:18, color:D.text, letterSpacing:0.5 }}>Annual Planner</div>
+          <div style={{ fontSize:12, color:D.sub4 }}>チームで使う年間プランナー</div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ width:'100%', height:1, background:D.light }}/>
+
+        {/* Google login button */}
+        <button
+          onClick={signInWithGoogle}
+          disabled={loading}
+          style={{
+            width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:12,
+            padding:'12px 0', borderRadius:10,
+            border:`1.5px solid ${D.light}`, background:'white',
+            fontWeight:700, fontSize:14, color:D.text,
+            cursor: loading ? 'wait' : 'pointer',
+            boxShadow:'0 1px 4px rgba(0,0,0,0.08)',
+            transition:'box-shadow 0.15s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.boxShadow='0 3px 12px rgba(0,0,0,0.13)'}
+          onMouseLeave={e => e.currentTarget.style.boxShadow='0 1px 4px rgba(0,0,0,0.08)'}
+        >
+          {/* Google icon */}
+          <svg width="20" height="20" viewBox="0 0 48 48">
+            <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2v6h7.8c4.5-4.2 7.1-10.3 7.1-17.2z"/>
+            <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.8-5.8l-7.8-6c-2.1 1.4-4.8 2.3-8 2.3-6.1 0-11.3-4.1-13.2-9.7H2.8v6.1C6.7 42.9 14.8 48 24 48z"/>
+            <path fill="#FBBC04" d="M10.8 28.8A14.6 14.6 0 0 1 10 24c0-1.7.3-3.3.8-4.8v-6.1H2.8A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.8 10.9l8-6.1z"/>
+            <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.9 2.4 30.5 0 24 0 14.8 0 6.7 5.1 2.8 13.1l8 6.1C12.7 13.6 17.9 9.5 24 9.5z"/>
+          </svg>
+          {loading ? 'リダイレクト中…' : 'Googleでログイン'}
+        </button>
+
+        <div style={{ fontSize:11, color:D.sub4, textAlign:'center', lineHeight:1.6 }}>
+          HEROのGoogleアカウントでログインしてください
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App
+// ─────────────────────────────────────────────────────────────────────────────
+function App({ user }) {
+  const [year,       setYear]       = useState(getFiscalYear(new Date()));
+  const [events,     setEvents]     = useState([]);
+  const [liveStatus, setLiveStatus] = useState('connecting');
+  const [popup,      setPopup]      = useState(null);
+  const [editModal,  setEditModal]  = useState(null);
+  const [exporting,  setExporting]  = useState(false);
+  const [containerW, setContainerW] = useState(1200);
+  const [containerH, setContainerH] = useState(900);
+  const svgRef       = useRef(null);
+  const containerRef = useRef(null);
+
+  // Responsive width
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(([e]) => {
+      setContainerW(e.contentRect.width || 1200);
+      setContainerH(e.contentRect.height || 900);
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Supabase
+  useEffect(() => {
+    sb.from('events').select('*').then(({ data, error }) => {
+      if (!error && data) setEvents(data);
+    });
+    const ch = sb.channel('ap-events')
+      .on('postgres_changes', { event:'*', schema:'public', table:'events' }, p => {
+        if (p.eventType === 'INSERT') {
+          setEvents(prev => prev.some(e => e.id === p.new.id) ? prev : [...prev, p.new]);
+        }
+        if (p.eventType === 'UPDATE') setEvents(prev => prev.map(e => e.id===p.new.id ? p.new : e));
+        if (p.eventType === 'DELETE') setEvents(prev => prev.filter(e => e.id!==p.old.id));
+      })
+      .subscribe(s => {
+        if (s==='SUBSCRIBED') setLiveStatus('live');
+        else if (s==='CLOSED'||s==='CHANNEL_ERROR') setLiveStatus('error');
+      });
+    return () => { sb.removeChannel(ch); };
+  }, []);
+
+  async function createEvent(ev) {
+    const newEv = toDbEvent({ id: genId(), ...ev });
+    const { data, error } = await sb.from('events').insert(newEv).select().single();
+    if (error) {
+      alert('保存エラー: ' + error.message);
+      return;
+    }
+    const savedEvent = data || newEv;
+    setEvents(prev => prev.some(e => e.id === savedEvent.id) ? prev : [...prev, savedEvent]);
+  }
+  async function updateEvent(ev) {
+    const prevEvent = events.find(e => e.id === ev.id);
+    setEvents(p => p.map(e => e.id===ev.id ? ev : e));
+    const { error } = await sb.from('events').update(toDbEvent(ev)).eq('id', ev.id);
+    if (error) {
+      if (prevEvent) setEvents(p => p.map(e => e.id === ev.id ? prevEvent : e));
+      alert('更新エラー: ' + error.message);
+    }
+  }
+  async function deleteEvent(id) {
+    const prevEvent = events.find(e => e.id === id);
+    setEvents(p => p.filter(e => e.id!==id));
+    const { error } = await sb.from('events').delete().eq('id', id);
+    if (error) {
+      if (prevEvent) setEvents(p => [...p, prevEvent]);
+      alert('削除エラー: ' + error.message);
+    }
+  }
+
+  function handleDragCreate({ type, groupId, startDate, endDate, mouseX, mouseY }) {
+    setPopup({ type, groupId, startDate, endDate, x: mouseX, y: mouseY });
+  }
+  async function handlePopupSave({ title, type, groupId, startDate, endDate, assignee }) {
+    const normalizedStart = type === 'outcome' ? outcomeStart(year) : startDate;
+    const normalizedEnd = type === 'milestone' || type === 'outcome' ? null : (endDate || null);
+    await createEvent({ type, title, group_name: groupId, start_date: normalizedStart, end_date: normalizedEnd, assignee: assignee||null });
+    setPopup(null);
+  }
+
+  // PDF export
+  async function exportPDF(format = 'A0') {
+    if (!svgRef.current) return;
+    setExporting(true);
+    try {
+      const svgEl = svgRef.current;
+      const vb    = svgEl.viewBox.baseVal;
+      const W     = vb.width  || svgEl.getBoundingClientRect().width;
+      const H     = vb.height || svgEl.getBoundingClientRect().height;
+      let svgStr  = new XMLSerializer().serializeToString(svgEl);
+      svgStr = svgStr.replace(/(<svg[^>]*>)/, `$1<rect width="${W}" height="${H}" fill="white"/>`);
+
+      const isA4 = format === 'A4';
+      const SCALE = isA4 ? 1.2 : 3;
+      const canvas = document.createElement('canvas');
+      canvas.width  = W * SCALE;
+      canvas.height = H * SCALE;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const blob = new Blob([svgStr], { type:'image/svg+xml;charset=utf-8' });
+      const url  = URL.createObjectURL(blob);
+      await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload  = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); res(); };
+        img.onerror = rej;
+        img.src = url;
+      });
+      URL.revokeObjectURL(url);
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format: isA4 ? 'a4' : [1189,841] });
+      const pW = isA4 ? 297 : 1189;
+      const pH = isA4 ? 210 : 841;
+      const margin = isA4 ? 6 : 8;
+      const avW=pW-margin*2, avH=pH-margin*2;
+      const ratio = Math.min(avW/W, avH/H);
+      const fitW=W*ratio, fitH=H*ratio;
+      const imageType = isA4 ? 'JPEG' : 'PNG';
+      const imageData = isA4 ? canvas.toDataURL('image/jpeg', 0.72) : canvas.toDataURL('image/png');
+      pdf.addImage(imageData, imageType, margin+(avW-fitW)/2, margin+(avH-fitH)/2, fitW, fitH);
+      pdf.save(`annual_planner_FY${year}_${format}.pdf`);
+    } catch(err) {
+      alert('PDF出力エラー: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const yearEvents = useMemo(() => {
+    const viewStart = yearStart(year);
+    const viewEnd = outcomeEnd(year);
+    return events.filter(ev => {
+      const eventStart = ev.start_date;
+      const eventEnd = ev.end_date || ev.start_date;
+      return eventStart <= viewEnd && eventEnd >= viewStart;
+    });
+  }, [events, year]);
+
+  const layout = useMemo(() => computeFitLayout(containerH, yearEvents), [containerH, yearEvents]);
+
+  const groupSections = useMemo(() => computeGroupSections(yearEvents, layout), [yearEvents, layout]);
+
+  const totalSvgH = useMemo(() => {
+    const last = groupSections[groupSections.length-1];
+    return last ? last.y + last.height + 16 : 400;
+  }, [groupSections]);
+
+  const ppd = useMemo(() => {
+    const tw = Math.max(100, containerW - LBL_W);
+    return tw / totalTimelineDays(year);
+  }, [containerW, year]);
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:D.bg, overflow:'hidden' }}>
+      <Header year={year} setYear={setYear} liveStatus={liveStatus} onExportA4={() => exportPDF('A4')} onExportA0={() => exportPDF('A0')} exporting={exporting} user={user}/>
+      <div ref={containerRef} style={{ flex:1, overflowX:'auto', overflowY:'hidden', position:'relative' }}>
+        <TimelineSVG
+          svgRef={svgRef}
+          year={year} ppd={ppd}
+          layout={layout}
+          groupSections={groupSections}
+          totalSvgH={totalSvgH}
+          containerW={Math.max(containerW, LBL_W+200)}
+          onDragCreate={handleDragCreate}
+          onMoveEvent={updateEvent}
+          onClickEvent={ev => setEditModal({ event:ev })}
+        />
+      </div>
+      {popup && <QuickAddPopup popup={popup} onSave={handlePopupSave} onClose={() => setPopup(null)}/>}
+      {editModal && (
+        <EditModal
+          event={editModal.event}
+          onSave={ev => { updateEvent(ev); setEditModal(null); }}
+          onDelete={id => { deleteEvent(id); setEditModal(null); }}
+          onClose={() => setEditModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header
+// ─────────────────────────────────────────────────────────────────────────────
+const NAV_BTN = { background:'rgba(255,255,255,0.18)', border:'none', color:'white', borderRadius:6, padding:'3px 12px', cursor:'pointer', fontSize:18, fontWeight:700, lineHeight:1 };
+
+function Header({ year, setYear, liveStatus, onExportA4, onExportA0, exporting, user }) {
+  const dotColor = liveStatus==='live' ? D.accent : liveStatus==='error' ? '#f87171' : '#fbbf24';
+  const dotLabel = liveStatus==='live' ? '● LIVE'  : liveStatus==='error' ? '● ERROR'  : '● 接続中';
+  const avatarUrl = user?.user_metadata?.avatar_url;
+  const displayName = user?.user_metadata?.full_name || user?.email || '';
+
+  async function signOut() {
+    await sb.auth.signOut();
+  }
+
+  return (
+    <div style={{ background:D.main, color:'white', padding:'0 20px', height:52, display:'flex', alignItems:'center', gap:14, flexShrink:0, boxShadow:'0 2px 12px rgba(11,139,127,0.3)', zIndex:10 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <div style={{ background:D.accent, color:D.text, fontWeight:900, fontSize:13, letterSpacing:2, padding:'3px 10px', borderRadius:4 }}>HERO</div>
+        <span style={{ fontWeight:700, fontSize:15, letterSpacing:0.5, opacity:0.95 }}>Annual Planner</span>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:6, marginLeft:12 }}>
+        <button style={NAV_BTN} onClick={() => setYear(y => y-1)}>‹</button>
+        <span style={{ fontSize:22, fontWeight:800, minWidth:92, textAlign:'center', letterSpacing:1 }}>FY{year}</span>
+        <button style={NAV_BTN} onClick={() => setYear(y => y+1)}>›</button>
+      </div>
+      <div style={{ flex:1 }}/>
+      <span style={{ fontSize:11, opacity:0.65 }}>クリック:マイルストーン　ドラッグ:フロー</span>
+      <span style={{ fontSize:12, color:dotColor, fontWeight:700, letterSpacing:0.5 }}>{dotLabel}</span>
+      <button onClick={onExportA4} disabled={exporting} style={{ background:exporting?'rgba(255,255,255,0.2)':'white', color:exporting?'rgba(255,255,255,0.6)':D.main, border:'none', borderRadius:7, padding:'7px 16px', fontWeight:800, cursor:exporting?'wait':'pointer', fontSize:13, whiteSpace:'nowrap' }}>
+        {exporting ? '生成中…' : '↓ PDF出力 (A4)'}
+      </button>
+      <button onClick={onExportA0} disabled={exporting} style={{ background:exporting?'rgba(255,255,255,0.2)':D.accent, color:exporting?'rgba(255,255,255,0.6)':D.text, border:'none', borderRadius:7, padding:'7px 16px', fontWeight:700, cursor:exporting?'wait':'pointer', fontSize:13, whiteSpace:'nowrap' }}>
+        {exporting ? '生成中…' : '↓ PDF出力 (A0)'}
+      </button>
+      {/* User avatar + logout */}
+      <div style={{ display:'flex', alignItems:'center', gap:8, borderLeft:'1px solid rgba(255,255,255,0.2)', paddingLeft:14 }}>
+        {avatarUrl
+          ? <img src={avatarUrl} style={{ width:30, height:30, borderRadius:'50%', border:'2px solid rgba(255,255,255,0.4)' }}/>
+          : <div style={{ width:30, height:30, borderRadius:'50%', background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700 }}>{displayName[0]?.toUpperCase()}</div>
+        }
+        <span style={{ fontSize:12, opacity:0.85, maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{displayName}</span>
+        <button onClick={signOut} style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', color:'white', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
+          ログアウト
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TimelineSVG
+// ─────────────────────────────────────────────────────────────────────────────
+function TimelineSVG({ svgRef, year, ppd, layout, groupSections, totalSvgH, containerW, onDragCreate, onMoveEvent, onClickEvent }) {
+  const { ROW_H, LANE_G, GRP_PAD } = layout;
+  const createDragRef = useRef(null);
+  const longPressRef = useRef(null);
+  const eventDragRef = useRef(null);
+  const suppressClickRef = useRef(false);
+  const [drag,  setDrag] = useState(null);
+  const [movingEvent, setMovingEvent] = useState(null);
+  const ppdRef  = useRef(ppd);
+  const yearRef = useRef(year);
+  const sectionsRef = useRef(groupSections);
+  useEffect(() => { ppdRef.current  = ppd;  }, [ppd]);
+  useEffect(() => { yearRef.current = year; }, [year]);
+  useEffect(() => { sectionsRef.current = groupSections; }, [groupSections]);
+
+  const svgW   = containerW;
+  const months = getMonthSegments(year);
+  const today  = toYMD(new Date());
+  const inYear = today >= yearStart(year) && today <= yearEnd(year);
+
+  function xToDate(x) {
+    const tx = x - LBL_W;
+    const d  = Math.round(tx / ppdRef.current);
+    return addDays(yearStart(yearRef.current), Math.max(0, Math.min(d, totalTimelineDays(yearRef.current)-1)));
+  }
+  function dateToX(s) { return LBL_W + diffDays(yearStart(year), s) * ppd; }
+  function yToGroupId(y) {
+    for (const g of sectionsRef.current) { if (y >= g.y && y < g.y+g.height) return g.id; }
+    return null;
+  }
+  function getLaneTop(section, lane) {
+    let top = section.y + GRP_PAD;
+    for (let i = 0; i < lane; i++) top += (section.laneHeights?.[i] || ROW_H) + LANE_G;
+    return top;
+  }
+  function getLaneCenter(section, lane) {
+    return getLaneTop(section, lane) + (section.laneHeights?.[lane] || ROW_H) / 2;
+  }
+  function yToLane(section, y) {
+    if (!section) return 0;
+    const laneCount = Math.max(section.numLanes || 1, 1);
+    for (let lane = 0; lane < laneCount; lane++) {
+      const top = getLaneTop(section, lane);
+      const bottom = top + (section.laneHeights?.[lane] || ROW_H);
+      if (y >= top && y < bottom + LANE_G / 2) return lane;
+    }
+    return Math.max(0, laneCount - 1);
+  }
+  function getSvgXY(e) { const r = svgRef.current.getBoundingClientRect(); return { x: e.clientX-r.left, y: e.clientY-r.top }; }
+
+  function handleBgDown(e) {
+    if (e.button !== 0) return;
+    const { x, y } = getSvgXY(e);
+    if (x < LBL_W || y < HDR_H) return;
+    const gid = yToGroupId(y);
+    if (!gid) return;
+    const isOutcomeColumn = x >= dateToX(outcomeStart(yearRef.current));
+    const fixedDate = outcomeStart(yearRef.current);
+    const state = { groupId:gid, startX:x, currentX:x, startDate:isOutcomeColumn ? fixedDate : xToDate(x), endDate:isOutcomeColumn ? fixedDate : xToDate(x), y, forcedType:isOutcomeColumn ? 'outcome' : null };
+    createDragRef.current = state;
+    setDrag({ ...state });
+    e.preventDefault();
+  }
+
+  function beginEventMove(e, ev, mode='move') {
+    if (e.button !== 0) return;
+    const { x, y } = getSvgXY(e);
+    const section = sectionsRef.current.find(g => g.id === (ev.group_name || 'overall'));
+    const duration = ev.type !== 'milestone' && ev.end_date ? diffDays(ev.start_date, ev.end_date) : 0;
+    const state = {
+      event: ev,
+      originX: x,
+      originY: y,
+      currentX: x,
+      currentY: y,
+      groupId: ev.group_name || 'overall',
+      targetGroupId: ev.group_name || 'overall',
+      laneIndex: hasLaneIndex(ev) ? ev.lane_index : (ev.lane || 0),
+      targetLaneIndex: hasLaneIndex(ev) ? ev.lane_index : (ev.lane || 0),
+      pressStartedAt: Date.now(),
+      startDate: ev.start_date,
+      endDate: ev.end_date,
+      duration,
+      cy: section ? getLaneCenter(section, hasLaneIndex(ev) ? ev.lane_index : (ev.lane || 0)) : y,
+      mode,
+      active: false,
+    };
+    longPressRef.current = state;
+    suppressClickRef.current = false;
+    window.clearTimeout(longPressRef.current.timerId);
+    longPressRef.current.timerId = window.setTimeout(() => {
+      if (!longPressRef.current) return;
+      const activeState = { ...longPressRef.current, active:true };
+      eventDragRef.current = activeState;
+      longPressRef.current = activeState;
+      setMovingEvent({ ...activeState });
+      suppressClickRef.current = true;
+    }, LONG_PRESS_MS);
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function handleEventClick(e, ev) {
+    e.stopPropagation();
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    onClickEvent(ev);
+  }
+
+  useEffect(() => {
+    function onMove(e) {
+      if (!svgRef.current) return;
+      const r = svgRef.current.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+
+      if (eventDragRef.current?.active) {
+        const targetGroupId = yToGroupId(y) || eventDragRef.current.groupId;
+        const targetSection = sectionsRef.current.find(g => g.id === targetGroupId);
+        const targetLaneIndex = eventDragRef.current.mode === 'move'
+          ? yToLane(targetSection, y)
+          : eventDragRef.current.targetLaneIndex;
+        let startDate = eventDragRef.current.startDate;
+        let endDate = eventDragRef.current.endDate;
+        if (eventDragRef.current.mode === 'move') {
+          startDate = xToDate(x);
+          endDate = eventDragRef.current.event.type !== 'milestone'
+            ? addDays(startDate, eventDragRef.current.duration)
+            : eventDragRef.current.endDate;
+        } else if (eventDragRef.current.mode === 'resize-start') {
+          const proposedStart = xToDate(x);
+          startDate = endDate ? (proposedStart <= endDate ? proposedStart : endDate) : proposedStart;
+        } else if (eventDragRef.current.mode === 'resize-end') {
+          const proposedEnd = xToDate(x);
+          endDate = proposedEnd >= startDate ? proposedEnd : startDate;
+        }
+        const upd = {
+          ...eventDragRef.current,
+          currentX:x,
+          currentY:y,
+          targetGroupId: eventDragRef.current.mode === 'move' ? targetGroupId : eventDragRef.current.groupId,
+          targetLaneIndex,
+          cy: eventDragRef.current.mode === 'move' ? (targetSection ? getLaneCenter(targetSection, targetLaneIndex) : y) : eventDragRef.current.cy,
+          startDate,
+          endDate,
+        };
+        eventDragRef.current = upd;
+        setMovingEvent({ ...upd });
+        return;
+      }
+
+      if (longPressRef.current && !longPressRef.current.active) {
+        const moved = Math.hypot(x - longPressRef.current.originX, y - longPressRef.current.originY);
+        if (moved >= DRAG_THRESH) {
+          window.clearTimeout(longPressRef.current.timerId);
+          longPressRef.current = null;
+        }
+      }
+
+      if (!createDragRef.current) return;
+      const upd = { ...createDragRef.current, currentX:x, endDate:xToDate(x) };
+      createDragRef.current = upd;
+      setDrag({ ...upd });
+    }
+    function onUp(e) {
+      if (eventDragRef.current?.active) {
+        const d = eventDragRef.current;
+        eventDragRef.current = null;
+        longPressRef.current = null;
+        setMovingEvent(null);
+        const nextEvent = {
+          ...d.event,
+          group_name: d.mode === 'move' ? d.targetGroupId : d.event.group_name,
+          lane_index: d.mode === 'move' ? d.targetLaneIndex : d.event.lane_index,
+          start_date: d.startDate,
+          end_date: d.event.type !== 'milestone' ? d.endDate : d.event.end_date,
+        };
+        onMoveEvent(nextEvent);
+        window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+        return;
+      }
+
+      if (longPressRef.current && !longPressRef.current.active) {
+        window.clearTimeout(longPressRef.current.timerId);
+        longPressRef.current = null;
+      }
+
+      if (!createDragRef.current) return;
+      const d = createDragRef.current;
+      createDragRef.current = null;
+      setDrag(null);
+      if (d.forcedType === 'outcome') {
+        onDragCreate({ type:'outcome', groupId:d.groupId, startDate:d.startDate, endDate:null, mouseX:e.clientX, mouseY:e.clientY });
+        return;
+      }
+      const isDrag = Math.abs(d.currentX - d.startX) >= DRAG_THRESH;
+      const s   = d.startDate <= d.endDate ? d.startDate : d.endDate;
+      const end = d.startDate <= d.endDate ? d.endDate   : d.startDate;
+      onDragCreate({ type:isDrag?'flow':'milestone', groupId:d.groupId, startDate:s, endDate:isDrag?end:null, mouseX:e.clientX, mouseY:e.clientY });
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+    return () => {
+      window.removeEventListener('mousemove',onMove);
+      window.removeEventListener('mouseup',onUp);
+    };
+  }, [onDragCreate, onMoveEvent]); // refs keep positions current
+
+  const todayX = inYear ? dateToX(today) : null;
+
+  // Drag preview
+  let dragPreview = null;
+  if (drag) {
+    const x1 = Math.min(drag.startX, drag.currentX);
+    const x2 = Math.max(drag.startX, drag.currentX);
+    const isDrag = Math.abs(drag.currentX-drag.startX) >= DRAG_THRESH;
+    const g  = groupSections.find(g => g.id===drag.groupId);
+    const cy = g ? g.y+g.height/2 : drag.y;
+    const col= g ? g.color : D.main;
+    dragPreview = isDrag
+      ? <FlowShape x1={x1} x2={x2} cy={cy} color={col} opacity={0.4} h={ROW_H}/>
+      : <MilestoneShape cx={drag.startX} cy={cy} color={col} opacity={0.4}/>;
+  }
+
+  let movingPreview = null;
+  if (movingEvent) {
+    const previewGroup = groupSections.find(g => g.id === movingEvent.targetGroupId);
+    const previewColor = previewGroup ? previewGroup.color : D.main;
+    const previewX = dateToX(movingEvent.startDate);
+    const previewY = movingEvent.cy;
+    if (movingEvent.event.type === 'milestone') {
+      movingPreview = (
+        <g>
+          <MilestoneShape cx={previewX} cy={previewY} color={previewColor} opacity={0.6}/>
+          <MilestoneLabel cx={previewX} cy={previewY} color={previewColor} startDate={movingEvent.startDate} label={movingEvent.event.title} assignee={movingEvent.event.assignee} opacity={0.6}/>
+        </g>
+      );
+    } else if (movingEvent.event.type === 'flow') {
+      const previewEndX = dateToX(movingEvent.endDate || movingEvent.startDate) + ppd;
+      movingPreview = <FlowShape x1={previewX} x2={Math.max(previewX + 40, previewEndX)} cy={previewY} color={previewColor} label={movingEvent.event.title} assignee={movingEvent.event.assignee} opacity={0.6} h={ROW_H}/>;
+    } else if (movingEvent.event.type === 'holiday') {
+      const previewEndX = dateToX(movingEvent.endDate || movingEvent.startDate) + ppd;
+      movingPreview = (
+        <g opacity={0.6}>
+          <line x1={previewX} y1={previewY - ROW_H * 0.8} x2={previewX} y2={previewY + ROW_H * 0.8} stroke="#f59e0b" strokeWidth={3}/>
+          <line x1={previewEndX} y1={previewY - ROW_H * 0.8} x2={previewEndX} y2={previewY + ROW_H * 0.8} stroke="#f59e0b" strokeWidth={1.5} opacity={0.55}/>
+          <text x={previewX + 6} y={previewY - ROW_H * 0.8 + 12} textAnchor="start" fill="#92400e" fontSize={12} fontWeight="700">
+            {movingEvent.event.title}
+          </text>
+        </g>
+      );
+    }
+  }
+
+  return (
+    <svg ref={svgRef} className="no-select"
+      width={svgW} height={totalSvgH}
+      viewBox={`0 0 ${svgW} ${totalSvgH}`}
+      style={{ display:'block', cursor:'crosshair', background:D.bg }}
+      onMouseDown={handleBgDown}
+    >
+      <rect x={0} y={0} width={svgW} height={totalSvgH} fill={D.bg}/>
+
+      {/* Alternating month shading */}
+      {months.map((m,i) => {
+        const x = LBL_W + diffDays(yearStart(year), m.start)*ppd;
+        const w = m.days * ppd;
+        return <rect key={i} x={x} y={HDR_H} width={w} height={totalSvgH-HDR_H} fill={i%2===0?'rgba(255,255,255,0.5)':'rgba(205,251,228,0.3)'}/>;
+      })}
+
+      {/* Month vertical lines */}
+      {months.map((m,i) => {
+        const x = LBL_W + diffDays(yearStart(year), m.start)*ppd;
+        return <line key={i} x1={x} y1={HDR_H} x2={x} y2={totalSvgH} stroke={D.light} strokeWidth={0.5}/>;
+      })}
+
+      {/* Today line */}
+      {todayX && <line x1={todayX} y1={HDR_H} x2={todayX} y2={totalSvgH} stroke={D.accent} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.85}/>}
+
+      {/* Group sections */}
+      {groupSections.map(g => (
+        <GroupSection key={g.id} group={g} svgW={svgW} ppd={ppd} year={year} layout={layout} dateToX={dateToX} onClickEvent={handleEventClick} onBeginMove={beginEventMove}/>
+      ))}
+
+      {/* Drag preview */}
+      {dragPreview}
+      {movingPreview}
+
+      {/* Month header bar (always on top) */}
+      <rect x={0} y={0} width={svgW} height={HDR_H} fill={D.main}/>
+
+      {months.map((m,i) => {
+        const x = LBL_W + diffDays(yearStart(year), m.start)*ppd;
+        const w = m.days*ppd;
+        return (
+          <g key={i}>
+            <line x1={x} y1={0} x2={x} y2={HDR_H} stroke="rgba(255,255,255,0.2)" strokeWidth={1}/>
+            <text x={x+w/2} y={HDR_H/2+7} textAnchor="middle" fill="white" fontSize={Math.min(18, Math.max(13, w*0.24))} fontWeight="700">{m.label}</text>
+          </g>
+        );
+      })}
+
+      {/* Today marker in header */}
+      {todayX && (
+        <g>
+          <line x1={todayX} y1={0} x2={todayX} y2={HDR_H} stroke={D.accent} strokeWidth={1.5}/>
+          <rect x={todayX-20} y={2} width={40} height={20} rx={4} fill={D.accent}/>
+          <text x={todayX} y={16} textAnchor="middle" fill={D.text} fontSize={11} fontWeight="700">TODAY</text>
+        </g>
+      )}
+
+      {/* Left label panel (on top of timeline) */}
+      <rect x={0} y={HDR_H} width={LBL_W} height={totalSvgH-HDR_H} fill={D.bg}/>
+      {/* HERO wordmark */}
+      <rect x={0} y={0} width={LBL_W} height={HDR_H} fill={D.main}/>
+      <text x={LBL_W/2} y={HDR_H/2+7} textAnchor="middle" fill={D.accent} fontSize={18} fontWeight="900" letterSpacing="3">HERO</text>
+
+      {/* Group labels */}
+      {groupSections.map(g => (
+        <g key={g.id+'_lbl'}>
+          <rect x={0}  y={g.y} width={5}       height={g.height} fill={g.color}/>
+          <rect x={5}  y={g.y} width={LBL_W-5} height={g.height} fill={g.color+'12'}/>
+          {g.lines.map((line, li) => (
+            <text key={li}
+              x={LBL_W/2+3}
+              y={g.y + g.height/2 + (li-(g.lines.length-1)/2)*(g.labelSize+4)}
+              textAnchor="middle" fill={g.color}
+              fontSize={g.labelSize || (g.lines.length>1?18:22)} fontWeight="700"
+            >{line}</text>
+          ))}
+          <line x1={0} y1={g.y+g.height} x2={svgW} y2={g.y+g.height} stroke={D.light} strokeWidth={1}/>
+        </g>
+      ))}
+
+      {/* Usage hint */}
+      <text x={LBL_W+8} y={totalSvgH-6} fill={D.sub4} fontSize={12} opacity={0.55}>
+        クリック: マイルストーン　ドラッグ: フロー　長押しドラッグ: 既存イベント移動
+      </text>
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GroupSection
+// ─────────────────────────────────────────────────────────────────────────────
+function GroupSection({ group, svgW, ppd, year, layout, dateToX, onClickEvent, onBeginMove }) {
+  const { ROW_H, LANE_G, GRP_PAD } = layout;
+  const { y, height, laned, outcomes = [], color, numLanes, laneHeights = [] } = group;
+  const laneBaseY = y + GRP_PAD;
+  const holidays = laned.filter(ev => ev.type === 'holiday');
+  const regularEvents = laned.filter(ev => ev.type !== 'holiday');
+  function laneTop(lane) {
+    let top = laneBaseY;
+    for (let i = 0; i < lane; i++) top += (laneHeights[i] || ROW_H) + LANE_G;
+    return top;
+  }
+  function laneCY(lane) { return laneTop(lane) + (laneHeights[lane] || ROW_H) / 2; }
+  const outcomeX = dateToX(outcomeStart(year)) + 8;
+  const outcomeW = Math.max(72, ppd * diffDays(outcomeStart(year), outcomeEnd(year)) - 16);
+  let outcomeY = y + 8;
+
+  return (
+    <g>
+      <rect x={LBL_W} y={y} width={svgW-LBL_W} height={height} fill={color+'07'}/>
+      {outcomes.map(ev => {
+        const currentY = outcomeY;
+        outcomeY += estimateEventHeight(ev, layout) + 8;
+        return (
+          <g key={ev.id} style={{cursor:'pointer'}} onClick={e=>onClickEvent(e, ev)}>
+            <OutcomeShape
+              x={outcomeX}
+              y={currentY}
+              w={outcomeW}
+              color={color}
+              title={ev.title}
+              assignee={ev.assignee}
+            />
+          </g>
+        );
+      })}
+      {holidays.map(ev => {
+        const x1 = dateToX(ev.start_date);
+        const x2 = ev.end_date ? dateToX(ev.end_date)+ppd : x1+ppd;
+        const bandY = y + 8;
+        const bandH = 22;
+        return (
+          <g key={ev.id} style={{cursor:'pointer'}} onMouseDown={e => onBeginMove(e, ev)} onClick={e=>onClickEvent(e, ev)}>
+            <line x1={x1} y1={y + 6} x2={x1} y2={y+height-6} stroke="#f59e0b" strokeWidth={3}/>
+            <line x1={x2} y1={y + 6} x2={x2} y2={y+height-6} stroke="#f59e0b" strokeWidth={1.5} opacity={0.55}/>
+            <text x={x1 + 6} y={y + 18} textAnchor="start" fill="#92400e" fontSize={12} fontWeight="700">
+              {ev.title}
+            </text>
+          </g>
+        );
+      })}
+      {Array.from({length:numLanes}).map((_,i) => (
+        <line key={i} x1={LBL_W} y1={laneTop(i) + (laneHeights[i] || ROW_H)} x2={svgW} y2={laneTop(i) + (laneHeights[i] || ROW_H)} stroke={D.light} strokeWidth={0.35} strokeDasharray="3,6"/>
+      ))}
+      {regularEvents.map(ev => {
+        const cy = laneCY(ev.lane);
+        if (ev.type === 'milestone') {
+          return (
+            <g key={ev.id} style={{cursor:'pointer'}} onMouseDown={e => onBeginMove(e, ev)} onClick={e=>onClickEvent(e, ev)}>
+              <MilestoneShape cx={dateToX(ev.start_date)} cy={cy} color={color}/>
+              <MilestoneLabel cx={dateToX(ev.start_date)} cy={cy} color={color} startDate={ev.start_date} label={ev.title} assignee={ev.assignee}/>
+            </g>
+          );
+        }
+        if (ev.type === 'flow') {
+          const x1 = dateToX(ev.start_date);
+          const x2 = ev.end_date ? dateToX(ev.end_date)+ppd : x1+ppd*14;
+          const flowX2 = Math.max(x1+20,x2);
+          const handleW = 16;
+          return (
+            <g key={ev.id} onClick={e=>onClickEvent(e, ev)}>
+              <g style={{cursor:'pointer'}} onMouseDown={e => onBeginMove(e, ev, 'move')}>
+                <FlowShape x1={x1} x2={flowX2} cy={cy} color={color} label={ev.title} assignee={ev.assignee} h={ROW_H}/>
+              </g>
+              <rect
+                x={x1-4}
+                y={cy-(laneHeights[ev.lane] || ROW_H)/2}
+                width={handleW}
+                height={laneHeights[ev.lane] || ROW_H}
+                fill="transparent"
+                style={{cursor:'ew-resize'}}
+                onMouseDown={e => onBeginMove(e, ev, 'resize-start')}
+              />
+              <rect
+                x={flowX2-handleW}
+                y={cy-(laneHeights[ev.lane] || ROW_H)/2}
+                width={handleW+4}
+                height={laneHeights[ev.lane] || ROW_H}
+                fill="transparent"
+                style={{cursor:'ew-resize'}}
+                onMouseDown={e => onBeginMove(e, ev, 'resize-end')}
+              />
+            </g>
+          );
+        }
+        return null;
+      })}
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shapes
+// ─────────────────────────────────────────────────────────────────────────────
+function MilestoneShape({ cx, cy, color, label, assignee, opacity=1 }) {
+  const lines = splitEventLines(label, assignee);
+  const S = 14;
+  const pts = `${cx},${cy-S} ${cx+S},${cy} ${cx},${cy+S} ${cx-S},${cy}`;
+  return (
+    <g opacity={opacity}>
+      <rect x={cx-S-4} y={cy-S-4} width={(S+4)*2} height={(S+4)*2} fill="transparent"/>
+      <polygon points={pts} fill={color} stroke="white" strokeWidth={2}/>
+      {lines.map((line, i) => (
+        <text key={i} x={cx} y={cy-S-12-(lines.length-1-i)*16} textAnchor="middle" fill={color} fontSize={14} fontWeight="700" paintOrder="stroke" stroke={D.bg} strokeWidth={4}>
+          {line.length>16 ? line.slice(0,15)+'…' : line}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function MilestoneLabel({ startDate, label, assignee, color, cx, cy, opacity=1 }) {
+  const baseLines = splitEventLines(label, assignee);
+  const dateLabel = formatMonthDay(startDate);
+  const lines = baseLines.length
+    ? [`${dateLabel} ${baseLines[0]}`.trim(), ...baseLines.slice(1)]
+    : [dateLabel];
+  const placeRight = cy < HDR_H + 42 || cx < LBL_W + 72;
+  const labelX = placeRight ? Math.max(cx + 26, LBL_W + 12) : cx;
+  return (
+    <g opacity={opacity}>
+      {lines.map((line, i) => (
+        <text
+          key={i}
+          x={labelX}
+          y={placeRight ? cy + 5 + i * 16 : cy - 26 - (lines.length - 1 - i) * 16}
+          textAnchor={placeRight ? 'start' : 'middle'}
+          fill={color}
+          fontSize={14}
+          fontWeight="700"
+          paintOrder="stroke"
+          stroke={D.bg}
+          strokeWidth={4}
+        >
+          {line.length > 20 ? line.slice(0, 19) + '…' : line}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function FlowShape({ x1, x2, cy, color, label, assignee, opacity=1, h=BASE_ROW_H }) {
+  const labelLines = splitEventLines(label, assignee);
+  const dynamicH = Math.max(h, 18 + labelLines.length * 18);
+  const halfH = (dynamicH*1.05)/2;
+  const arrowW = Math.min(18, (x2-x1)*0.18);
+  const pts = [`${x1+3},${cy-halfH}`, `${x2-arrowW},${cy-halfH}`, `${x2},${cy}`, `${x2-arrowW},${cy+halfH}`, `${x1+3},${cy+halfH}`].join(' ');
+  const w = x2-x1;
+  const canFitInside = w > 64;
+  const textX = x1 + w/2 - arrowW/2;
+  const compact = w < 110;
+  const compactLines = compact ? labelLines.slice(0, 1) : labelLines;
+  const compactFontSize = Math.max(9, Math.min(14, w / 6.5));
+  return (
+    <g opacity={opacity}>
+      <polygon points={pts} fill={color} stroke="white" strokeWidth={1.5}/>
+      {(canFitInside ? compactLines : labelLines).map((line, i) => (
+        <text
+          key={i}
+          x={textX}
+          y={canFitInside ? cy + (compact ? 4 : 6) + (i-((canFitInside ? compactLines : labelLines).length-1)/2)*14 : cy - halfH - 12 - (labelLines.length-1-i)*16}
+          textAnchor="middle"
+          fill={canFitInside ? 'white' : color}
+          fontSize={canFitInside ? compactFontSize : 14}
+          fontWeight="700"
+          paintOrder={canFitInside ? undefined : 'stroke'}
+          stroke={canFitInside ? undefined : D.bg}
+          strokeWidth={canFitInside ? undefined : 4}
+        >
+          {canFitInside && compact ? (line.length>10 ? line.slice(0,9)+'…' : line) : (line.length>18 ? line.slice(0,17)+'…' : line)}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function OutcomeShape({ x, y, w, color, title, assignee, opacity=1 }) {
+  const lines = splitEventLines(title, assignee);
+  const cardH = Math.max(46, 16 + lines.length * 16);
+  return (
+    <g opacity={opacity}>
+      <rect x={x} y={y} width={w} height={cardH} rx={8} fill="white" stroke={color} strokeWidth={2}/>
+      <rect x={x} y={y} width={6} height={cardH} rx={6} fill={color}/>
+      {lines.map((line, i) => (
+        <text
+          key={i}
+          x={x + 14}
+          y={y + 18 + i * 16}
+          textAnchor="start"
+          fill={color}
+          fontSize={14}
+          fontWeight="700"
+        >
+          {line.length > 14 ? line.slice(0, 13) + '…' : line}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QuickAddPopup
+// ─────────────────────────────────────────────────────────────────────────────
+const POPUP_ANIM = `@keyframes popIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}`;
+
+function QuickAddPopup({ popup, onSave, onClose }) {
+  const [title,     setTitle]     = useState('');
+  const [type,      setType]      = useState(popup.type);
+  const [startDate, setStartDate] = useState(popup.startDate);
+  const [endDate,   setEndDate]   = useState(popup.endDate || popup.startDate);
+  const [assignee,  setAssignee]  = useState('');
+  const titleRef = useRef(null);
+  useEffect(() => { titleRef.current?.focus(); }, []);
+
+  const group = GROUPS.find(g => g.id===popup.groupId) || GROUPS[0];
+  const TYPE_LABELS = { milestone:'△ マイルストーン', flow:'→ フロー', holiday:'┃ フェーズ区切り', outcome:'□ Goal' };
+
+  function save() {
+    if (!title.trim()) { titleRef.current?.focus(); return; }
+    onSave({ title:title.trim(), type, groupId:popup.groupId, startDate, endDate, assignee });
+  }
+
+  const POP_W=310, POP_H=420;
+  let left=popup.x+14, top=popup.y-12;
+  if (left+POP_W > window.innerWidth-16)  left = popup.x-POP_W-14;
+  if (top+POP_H  > window.innerHeight-16) top  = window.innerHeight-POP_H-16;
+  if (top < 60) top = 60;
+
+  const inputStyle = (focused) => ({
+    width:'100%', padding:'8px 11px', borderRadius:7,
+    border:`1.5px solid ${D.light}`, marginBottom:10, fontSize:13, outline:'none',
+  });
+
+  return (
+    <>
+      <style>{POPUP_ANIM}</style>
+      <div style={{position:'fixed',inset:0,zIndex:200}} onClick={onClose}/>
+      <div style={{ position:'fixed', left, top, width:POP_W, maxHeight:'calc(100vh - 76px)', overflowY:'auto', zIndex:201, background:'white', borderRadius:14, boxShadow:'0 10px 40px rgba(0,0,0,0.18)', border:`2px solid ${group.color}`, padding:20, animation:'popIn 0.12s ease' }} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+          <span style={{width:10,height:10,borderRadius:'50%',background:group.color,display:'inline-block',flexShrink:0}}/>
+          <span style={{fontWeight:700,color:group.color,fontSize:12}}>{group.label}</span>
+          <div style={{flex:1}}/>
+          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:D.sub4,fontSize:17,lineHeight:1}}>✕</button>
+        </div>
+
+        {/* Type */}
+        <div style={{display:'flex',gap:5,marginBottom:12}}>
+          {(popup.type === 'outcome' ? ['outcome'] : ['milestone','flow','holiday']).map(t => (
+            <button key={t} onClick={()=>setType(t)} style={{ flex:1, padding:'5px 2px', borderRadius:7, border:`1.5px solid ${type===t?group.color:D.light}`, background:type===t?group.color:'white', color:type===t?'white':D.sub4, fontWeight:type===t?700:400, fontSize:10, cursor:'pointer' }}>{TYPE_LABELS[t]}</button>
+          ))}
+        </div>
+
+        <textarea ref={titleRef} value={title} onChange={e=>setTitle(e.target.value)}
+          onKeyDown={e=>{if(e.key==='Escape')onClose();}}
+          placeholder="タイトルを入力"
+          rows={3}
+          style={{...inputStyle(), minHeight:74, resize:'vertical', lineHeight:1.5}}
+          onFocus={e=>e.target.style.borderColor=group.color}
+          onBlur={e=>e.target.style.borderColor=D.light}
+        />
+
+        {type !== 'outcome' && (
+          <div style={{display:'flex',gap:8,marginBottom:10}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:D.sub4,marginBottom:3}}>開始日</div>
+              <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} style={{width:'100%',padding:'5px 8px',borderRadius:6,border:`1px solid ${D.light}`,fontSize:12}}/>
+            </div>
+            {type!=='milestone' && (
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:D.sub4,marginBottom:3}}>終了日</div>
+                <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} style={{width:'100%',padding:'5px 8px',borderRadius:6,border:`1px solid ${D.light}`,fontSize:12}}/>
+              </div>
+            )}
+          </div>
+        )}
+
+        <input value={assignee} onChange={e=>setAssignee(e.target.value)}
+          onKeyDown={e=>{if(e.key==='Enter')save();if(e.key==='Escape')onClose();}}
+          placeholder="担当者（任意）"
+          style={{width:'100%',padding:'7px 11px',borderRadius:7,border:`1.5px solid ${D.light}`,marginBottom:14,fontSize:12,outline:'none'}}
+          onFocus={e=>e.target.style.borderColor=group.color}
+          onBlur={e=>e.target.style.borderColor=D.light}
+        />
+
+        <button onClick={save} style={{width:'100%',padding:'10px',background:group.color,color:'white',border:'none',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>
+          追加する
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EditModal
+// ─────────────────────────────────────────────────────────────────────────────
+const MODAL_ANIM = `@keyframes modalIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}`;
+
+function EditModal({ event, onSave, onDelete, onClose }) {
+  const [title,     setTitle]     = useState(event.title || '');
+  const [type,      setType]      = useState(event.type);
+  const [groupId,   setGroupId]   = useState(event.group_name || 'overall');
+  const [startDate, setStartDate] = useState(event.start_date);
+  const [endDate,   setEndDate]   = useState(event.end_date || '');
+  const [assignee,  setAssignee]  = useState(event.assignee || '');
+  const group = GROUPS.find(g => g.id===groupId) || GROUPS[0];
+  const TYPE_LABELS = { milestone:'△ マイルストーン', flow:'→ フロー', holiday:'┃ フェーズ区切り', outcome:'□ Goal' };
+
+  function save() {
+    onSave({
+      ...event,
+      title,
+      type,
+      group_name:groupId,
+      start_date:type==='outcome' ? event.start_date : startDate,
+      end_date:type==='milestone' || type==='outcome' ? null : (endDate||null),
+      assignee:assignee||null
+    });
+  }
+
+  return (
+    <>
+      <style>{MODAL_ANIM}</style>
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.42)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+        <div style={{background:'white',borderRadius:16,padding:28,width:400,boxShadow:'0 16px 48px rgba(0,0,0,0.22)',border:`2px solid ${group.color}`,animation:'modalIn 0.15s ease'}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:18,color:group.color}}>イベントを編集</div>
+
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:11,color:D.sub4,marginBottom:3}}>グループ</div>
+            <select value={groupId} onChange={e=>setGroupId(e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:7,border:`1.5px solid ${D.light}`,fontSize:13,outline:'none'}}>
+              {GROUPS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+            </select>
+          </div>
+
+          <div style={{display:'flex',gap:6,marginBottom:12}}>
+            {['milestone','flow','holiday','outcome'].map(t => (
+              <button key={t} onClick={()=>setType(t)} style={{flex:1,padding:'6px 2px',borderRadius:7,border:`1.5px solid ${type===t?group.color:D.light}`,background:type===t?group.color:'white',color:type===t?'white':D.sub4,fontWeight:type===t?700:400,fontSize:10,cursor:'pointer'}}>{TYPE_LABELS[t]}</button>
+            ))}
+          </div>
+
+          <textarea value={title} onChange={e=>setTitle(e.target.value)}
+            placeholder="タイトル"
+            rows={3}
+            style={{width:'100%',padding:'8px 11px',borderRadius:7,border:`1.5px solid ${D.light}`,marginBottom:10,fontSize:13,outline:'none',minHeight:74,resize:'vertical',lineHeight:1.5}}
+            onFocus={e=>e.target.style.borderColor=group.color}
+            onBlur={e=>e.target.style.borderColor=D.light}
+          />
+
+          {type !== 'outcome' && (
+            <div style={{display:'flex',gap:8,marginBottom:10}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,color:D.sub4,marginBottom:3}}>開始日</div>
+                <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} style={{width:'100%',padding:'5px 8px',borderRadius:6,border:`1px solid ${D.light}`,fontSize:12}}/>
+              </div>
+              {type!=='milestone' && (
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,color:D.sub4,marginBottom:3}}>終了日</div>
+                  <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} style={{width:'100%',padding:'5px 8px',borderRadius:6,border:`1px solid ${D.light}`,fontSize:12}}/>
+                </div>
+              )}
+            </div>
+          )}
+
+          <input value={assignee} onChange={e=>setAssignee(e.target.value)}
+            placeholder="担当者（任意）"
+            style={{width:'100%',padding:'7px 11px',borderRadius:7,border:`1.5px solid ${D.light}`,marginBottom:20,fontSize:12,outline:'none'}}
+            onFocus={e=>e.target.style.borderColor=group.color}
+            onBlur={e=>e.target.style.borderColor=D.light}
+          />
+
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>{if(confirm('削除しますか？'))onDelete(event.id);}} style={{flex:1,padding:'9px 0',background:'#fef2f2',color:'#dc2626',border:'1px solid #fca5a5',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>削除</button>
+            <button onClick={onClose} style={{flex:1,padding:'9px 0',background:'#f3f4f6',color:D.sub4,border:'none',borderRadius:8,fontWeight:600,fontSize:13,cursor:'pointer'}}>キャンセル</button>
+            <button onClick={save} style={{flex:2,padding:'9px 0',background:group.color,color:'white',border:'none',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>保存</button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// Mount
+ReactDOM.createRoot(document.getElementById('root')).render(<Root/>);
+</script>
+</body>
+</html>
