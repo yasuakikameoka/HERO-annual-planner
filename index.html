@@ -113,6 +113,17 @@ function getResponsiveLayout(containerH = 900) {
   };
 }
 
+function computeFitLayout(containerH = 900, yearEvents = []) {
+  const base = getResponsiveLayout(containerH);
+  const eventCount = yearEvents.length;
+  const densityScale = eventCount > 120 ? 0.92 : eventCount > 80 ? 0.96 : 1;
+  return {
+    ROW_H: Math.max(30, Math.round(base.ROW_H * densityScale)),
+    LANE_G: Math.max(4, Math.round(base.LANE_G * densityScale)),
+    GRP_PAD: Math.max(8, Math.round(base.GRP_PAD * densityScale)),
+  };
+}
+
 function splitEventLines(title, assignee) {
   const titleLines = String(title || '').split('\n').map(s => s.trim()).filter(Boolean);
   return assignee ? [...titleLines, assignee] : titleLines;
