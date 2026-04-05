@@ -105,7 +105,7 @@ function outcomeStart(y) { return `${y+1}-04-01`; }
 function outcomeEnd(y) { return `${y+1}-05-01`; }
 function totalTimelineDays(y) { return diffDays(yearStart(y), outcomeEnd(y)); }
 function getResponsiveLayout(containerH = 900) {
-  const scale = Math.min(1.08, Math.max(0.76, containerH / 900));
+  const scale = Math.min(0.74, Math.max(0.5, containerH / 900));
   return {
     ROW_H: Math.round(BASE_ROW_H * scale),
     LANE_G: Math.max(4, Math.round(BASE_LANE_G * scale)),
@@ -472,7 +472,7 @@ function App({ user }) {
     });
   }, [events, year]);
 
-  const layout = useMemo(() => computeFitLayout(containerH, yearEvents), [containerH, yearEvents]);
+  const layout = useMemo(() => getResponsiveLayout(containerH), [containerH]);
 
   const groupSections = useMemo(() => computeGroupSections(yearEvents, layout), [yearEvents, layout]);
 
