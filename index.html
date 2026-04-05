@@ -112,20 +112,7 @@ function getResponsiveLayout(containerH = 900) {
     GRP_PAD: Math.max(8, Math.round(BASE_GRP_PAD * scale)),
   };
 }
-function computeFitLayout(containerH, yearEvents) {
-  // 1st pass: compute natural height at scale=1
-  const baseLayout = { ROW_H: BASE_ROW_H, LANE_G: BASE_LANE_G, GRP_PAD: BASE_GRP_PAD };
-  const baseSections = computeGroupSections(yearEvents, baseLayout);
-  const last = baseSections[baseSections.length - 1];
-  const naturalH = last ? last.y + last.height + 16 : 400;
-  // 2nd pass: scale to fit containerH (max 1.0 — don't upscale; min 0.35)
-  const scale = Math.min(1.0, Math.max(0.35, containerH / naturalH));
-  return {
-    ROW_H: Math.round(BASE_ROW_H * scale),
-    LANE_G: Math.max(3, Math.round(BASE_LANE_G * scale)),
-    GRP_PAD: Math.max(4, Math.round(BASE_GRP_PAD * scale)),
-  };
-}
+
 function splitEventLines(title, assignee) {
   const titleLines = String(title || '').split('\n').map(s => s.trim()).filter(Boolean);
   return assignee ? [...titleLines, assignee] : titleLines;
