@@ -488,6 +488,9 @@ function App({ user }) {
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:D.bg, overflow:'hidden' }}>
       <Header year={year} setYear={setYear} liveStatus={liveStatus} onExportA4={() => exportPDF('A4')} onExportA0={() => exportPDF('A0')} exporting={exporting} user={user}/>
       <div ref={containerRef} style={{ flex:1, overflow:'auto', position:'relative' }}>
+        <div style={{ position:'sticky', top:0, zIndex:12, pointerEvents:'none', marginBottom:-HDR_H }}>
+          <StickyTimelineHeader year={year} ppd={ppd} svgW={Math.max(containerW, LBL_W+200)} />
+        </div>
         <TimelineSVG
           svgRef={svgRef}
           year={year} ppd={ppd}
@@ -510,6 +513,49 @@ function App({ user }) {
         />
       )}
     </div>
+  );
+}
+
+function StickyTimelineHeader({ year, ppd, svgW }) {
+  const months = getMonthSegments(year);
+  const today = toYMD(new Date());
+  const inYear = today >= yearStart(year) && today <= yearEnd(year);
+  const todayX = inYear ? LBL_W + diffDays(yearStart(year), today) * ppd : null;
+
+  return (
+    <svg
+      width={svgW}
+      height={HDR_H}
+      viewBox={`0 0 ${svgW} ${HDR_H}`}
+      style={{ display:'block', background:'transparent' }}
+      aria-hidden="true"
+    >
+      <rect x={0} y={0} width={svgW} height={HDR_H} fill={D.main}/>
+
+      {months.map((m, i) => {
+        const x = LBL_W + diffDays(yearStart(year), m.start) * ppd;
+        const w = m.days * ppd;
+        return (
+          <g key={i}>
+            <line x1={x} y1={0} x2={x} y2={HDR_H} stroke="rgba(255,255,255,0.2)" strokeWidth={1}/>
+            <text x={x + w / 2} y={HDR_H / 2 + 7} textAnchor="middle" fill="white" fontSize={Math.min(18, Math.max(13, w * 0.24))} fontWeight="700">
+              {m.label}
+            </text>
+          </g>
+        );
+      })}
+
+      {todayX && (
+        <g>
+          <line x1={todayX} y1={0} x2={todayX} y2={HDR_H} stroke={D.accent} strokeWidth={1.5}/>
+          <rect x={todayX - 20} y={2} width={40} height={20} rx={4} fill={D.accent}/>
+          <text x={todayX} y={16} textAnchor="middle" fill={D.text} fontSize={11} fontWeight="700">TODAY</text>
+        </g>
+      )}
+
+      <rect x={0} y={0} width={LBL_W} height={HDR_H} fill={D.main}/>
+      <text x={LBL_W / 2} y={HDR_H / 2 + 7} textAnchor="middle" fill={D.accent} fontSize={18} fontWeight="900" letterSpacing="3">HERO</text>
+    </svg>
   );
 }
 
@@ -1303,7 +1349,12 @@ function EditModal({ event, onSave, onDelete, onClose }) {
 }
 
 // Mount
-ReactDOM.createRoot(document.getElementById('root')).render(<Root/>);
+const rootEl = document.getElementById('root');
+if (ReactDOM.createRoot) {
+  ReactDOM.createRoot(rootEl).render(<Root />);
+} else {
+  ReactDOM.render(<Root />, rootEl);
+}
 </script>
 </body>
 </html>
