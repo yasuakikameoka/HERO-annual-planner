@@ -12,12 +12,16 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root {
+      min-height: 100%;
+    }
     body {
       font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI', 'Yu Gothic', Verdana, sans-serif;
       background: #f0faf8;
       color: #111;
-      height: 100vh;
-      overflow: hidden;
+      min-height: 100dvh;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
     svg text {
       font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI', Verdana, sans-serif;
@@ -474,9 +478,9 @@ function App({ user }) {
   }, [containerW, year]);
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:D.bg, overflow:'hidden' }}>
+    <div style={{ display:'flex', flexDirection:'column', minHeight:'100dvh', background:D.bg }}>
       <Header year={year} setYear={setYear} liveStatus={liveStatus} onExportA4={() => exportPDF('A4')} onExportA0={() => exportPDF('A0')} exporting={exporting} user={user}/>
-      <div ref={containerRef} style={{ flex:1, overflow:'auto', position:'relative' }}>
+      <div ref={containerRef} style={{ flex:'1 1 auto', minHeight:0, overflow:'auto', position:'relative' }}>
         <TimelineSVG
           svgRef={svgRef}
           year={year} ppd={ppd}
